@@ -91,6 +91,8 @@ jobs:
         working-directory: ${{ runner.temp }}/digests
         run: |
           docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --annotation "index:org.opencontainers.image.description=agent-${{ inputs.name }} image" \
             -t "$IMAGE:latest" \
             -t "$IMAGE:${{ inputs.date_tag }}" \
             $(printf "$IMAGE@sha256:%s " *)
