@@ -1,0 +1,54 @@
+name: publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dockerfile.*"
+      - ".github/workflows/**"
+  schedule:
+    - cron: "0 3 * * 1,5" # Monday and Friday, 03:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      date_tag: ${{ steps.d.outputs.date_tag }}
+      owner: ${{ steps.d.outputs.owner }}
+    steps:
+      - id: d
+        run: |
+          echo "date_tag=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+  base:
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_build-image.yml
+    with:
+      name: base
+      dockerfile: dockerfile.dev-base
+      date_tag: ${{ needs.prepare.outputs.date_tag }}
+
+  agents:
+    needs: [prepare, base]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        agent: [claude, codex, opencode]
+    uses: ./.github/workflows/_build-image.yml
+    with:
+      name: ${{ matrix.agent }}
+      dockerfile: dockerfile.${{ matrix.agent }}
+      date_tag: ${{ needs.prepare.outputs.date_tag }}
+      base_image: ghcr.io/${{ needs.prepare.outputs.owner }}/agent-base:${{ needs.prepare.outputs.date_tag }}

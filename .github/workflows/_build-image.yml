@@ -1,0 +1,99 @@
+name: build-image (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: Image name suffix (e.g. base -> agent-base)
+        required: true
+        type: string
+      dockerfile:
+        required: true
+        type: string
+      date_tag:
+        required: true
+        type: string
+      base_image:
+        description: Full base image ref passed as BASE_IMAGE build-arg
+        required: false
+        type: string
+        default: ""
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/agent-${{ inputs.name }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            BASE_IMAGE=${{ inputs.base_image }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ inputs.name }}-${{ matrix.runner }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.name }}-${{ matrix.runner }}
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ inputs.name }}-${{ matrix.runner }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ inputs.name }}-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            -t "$IMAGE:latest" \
+            -t "$IMAGE:${{ inputs.date_tag }}" \
+            $(printf "$IMAGE@sha256:%s " *)
+      - name: Inspect
+        run: docker buildx imagetools inspect "$IMAGE:${{ inputs.date_tag }}"
