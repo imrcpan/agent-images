@@ -1,5 +1,4 @@
 ARG BASE_IMAGE=agent-base
 FROM ${BASE_IMAGE} AS dev
-FROM coding-base-debian AS dev
 
 RUN curl -fsSL https://opencode.ai/install | bash
