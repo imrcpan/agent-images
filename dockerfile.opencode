@@ -1,0 +1,4 @@
+
+FROM coding-base-debian AS dev
+
+RUN curl -fsSL https://opencode.ai/install | bash

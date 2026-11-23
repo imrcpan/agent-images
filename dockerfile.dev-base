@@ -1,0 +1,41 @@
+FROM debian:13 AS dev
+
+# apt
+RUN apt update && apt upgrade -y
+RUN apt install -y \
+    psmisc apt-transport-https curl \
+    ca-certificates gnupg lsb-release \
+    vim gcc g++ make cmake git \
+    net-tools axel htop \
+    fastfetch sudo
+RUN apt update && apt upgrade -y
+
+# github cli
+RUN (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+    && sudo mkdir -p -m 755 /etc/apt/keyrings \
+    && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && sudo apt update \
+    && sudo apt install gh -y
+
+# pnpm
+RUN apt install -y nodejs npm
+RUN corepack enable
+RUN corepack prepare pnpm@latest --activate
+
+# dotnet
+RUN wget https://packages.microsoft.com/config/debian/13/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+RUN dpkg -i packages-microsoft-prod.deb
+RUN rm packages-microsoft-prod.deb
+RUN apt update && apt install -y dotnet-sdk-10.0
+
+# uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+ENV TERM=xterm-256color
+ENV IS_SANDBOX=1
+
+WORKDIR /work

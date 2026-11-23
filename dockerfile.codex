@@ -1,0 +1,6 @@
+
+FROM coding-base-debian AS dev
+
+RUN apt update && apt install bubblewrap
+
+RUN npm i -g @openai/codex
